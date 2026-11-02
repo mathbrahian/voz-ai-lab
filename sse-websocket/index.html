@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <title>voz-ai-lab: SSE y WebSocket</title>
+  <style>
+    body { font-family: sans-serif; max-width: 640px; margin: 2rem auto; padding: 0 1rem; }
+    pre { background: #f2f2f2; padding: 0.75rem; min-height: 4rem; white-space: pre-wrap; }
+  </style>
+</head>
+<body>
+  <h1>SSE y WebSocket</h1>
+
+  <h2>SSE</h2>
+  <input id="pregunta" value="qué es SSE">
+  <button id="btn-sse">Preguntar</button>
+  <pre id="salida-sse"></pre>
+
+  <h2>WebSocket</h2>
+  <input id="mensaje" value="hola" disabled>
+  <button id="btn-ws" disabled>Enviar</button>
+  <pre id="salida-ws"></pre>
+
+  <script>
+    // --- SSE: EventSource abre la conexión y recibe eventos ---
+    const salidaSse = document.getElementById("salida-sse");
+
+    document.getElementById("btn-sse").onclick = () => {
+      salidaSse.textContent = "";
+      const pregunta = encodeURIComponent(document.getElementById("pregunta").value);
+      const fuente = new EventSource(`/sse?pregunta=${pregunta}`);
+
+      // Eventos sin nombre: las líneas "data: ..."
+      fuente.onmessage = (e) => { salidaSse.textContent += e.data + " "; };
+
+      // Evento con nombre: "event: fin". Sin close(), EventSource se reconecta solo
+      fuente.addEventListener("fin", () => fuente.close());
+    };
+
+    // --- WebSocket: una sola conexión que queda abierta ---
+    const salidaWs = document.getElementById("salida-ws");
+    const inputWs = document.getElementById("mensaje");
+    const btnWs = document.getElementById("btn-ws");
+    const protocolo = location.protocol === "https:" ? "wss" : "ws";
+    const socket = new WebSocket(`${protocolo}://${location.host}/ws`);
+
+    socket.onopen = () => {
+      inputWs.disabled = false;
+      btnWs.disabled = false;
+      salidaWs.textContent += "Conectado\n";
+    };
+    socket.onmessage = (e) => { salidaWs.textContent += e.data + "\n"; };
+    socket.onclose = () => {
+      inputWs.disabled = true;
+      btnWs.disabled = true;
+      salidaWs.textContent += "Desconectado\n";
+    };
+
+    btnWs.onclick = () => socket.send(inputWs.value);
+  </script>
+</body>
+</html>

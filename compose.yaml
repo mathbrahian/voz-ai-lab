@@ -1,0 +1,26 @@
+services:
+  voz:
+    build: .
+    user: "1000:1000"  # tu usuario: así los archivos de ./modelos son tuyos y no de root
+    environment:
+      # Más grande: más preciso, pero más lento y con más RAM. Los ".en" solo entienden inglés.
+      #   tiny, tiny.en          76 MB
+      #   base, base.en         145 MB
+      #   small, small.en       484 MB
+      #   medium, medium.en     1,5 GB
+      #   large-v1, large-v2    3,1 GB
+      # Existen, pero entrypoint.sh aún no puede descargarlos:
+      #   large-v3              3,1 GB   (usa otros archivos)
+      #   large, turbo, large-v3-turbo, distil-*   (están en otros repositorios)
+      MODELO_WHISPER: medium
+    ports:
+      - "127.0.0.1:8766:8766"
+    volumes:
+      - ./modelos:/app/modelos
+
+  web:
+    image: nginx:alpine
+    ports:
+      - "127.0.0.1:8767:80"
+    volumes:
+      - ./frontend:/usr/share/nginx/html:ro

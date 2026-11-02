@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <title>voz-ai-lab: transcripción</title>
+  <style>
+    body { font-family: sans-serif; max-width: 640px; margin: 2rem auto; padding: 0 1rem; }
+    pre { background: #f2f2f2; padding: 0.75rem; min-height: 4rem; white-space: pre-wrap; }
+    #parcial { color: #888; }
+  </style>
+</head>
+<body>
+  <div id="app">Cargando...</div>
+
+  <script type="module">
+    import { createElement, useRef, useState } from "https://esm.sh/react@19.3.1";
+    import { createRoot } from "https://esm.sh/react-dom@19.3.1/client";
+    import htm from "https://esm.sh/htm@3.1.1";
+
+    const URL_BACKEND = "ws://127.0.0.1:8766/transcribir";
+
+    const html = htm.bind(createElement);  // JSX sin paso de compilación
+
+    // Corre en el hilo de audio y copia cada bloque que llega del micrófono
+    const captura = `
+      class Captura extends AudioWorkletProcessor {
+        process(entradas) {
+          if (entradas[0][0]) this.port.postMessage(entradas[0][0].slice(0));
+          return true;
+        }
+      }
+      registerProcessor("captura", Captura);
+    `;
+
+    // Firefox no captura a una frecuencia distinta de la del micrófono: se usa la nativa y se reduce aquí
+    function crearReductor(frecuencia) {
+      const paso = frecuencia / 16000;
+      let suma = 0, cuenta = 0, avance = 0;
+      return (bloque) => {
+        const salida = [];
+        for (const muestra of bloque) {
+          suma += muestra;
+          cuenta++;
+          avance++;
+          if (avance >= paso) {
+            salida.push(Math.max(-1, Math.min(1, suma / cuenta)) * 32767);
+            suma = 0;
+            cuenta = 0;
+            avance -= paso;
+          }
+        }
+        return Int16Array.from(salida);
+      };
+    }
+
+    function App() {
+      const [fase, setFase] = useState("parada");  // parada, arrancando, escuchando o terminando
+      const [estado, setEstado] = useState("");
+      const [fijo, setFijo] = useState("");
+      const [parcial, setParcial] = useState("");
+      const nivel = useRef(null);  // se actualiza directo: llegan unos 100 bloques por segundo
+      const detener = useRef(null);
+
+      async function empezar() {
+        setFase("arrancando");
+        setFijo("");
+        setParcial("");
+        setEstado("Pidiendo el micrófono...");
+
+        let microfono, contexto;
+        const apagarMicrofono = () => {
+          microfono?.getTracks().forEach((pista) => pista.stop());
+          contexto?.close();
+          nivel.current.value = 0;
+        };
+
+        try {
+          microfono = await navigator.mediaDevices.getUserMedia({ audio: true });
+          contexto = new AudioContext();
+          await contexto.audioWorklet.addModule(URL.createObjectURL(new Blob([captura], { type: "text/javascript" })));
+          const nodo = new AudioWorkletNode(contexto, "captura");
+          contexto.createMediaStreamSource(microfono).connect(nodo);
+          nodo.connect(contexto.destination);  // no se oye nada: el procesador no escribe su salida
+          contexto.resume();  // sin await: no se resuelve si el sistema no tiene salida de audio
+
+          setEstado("Conectando...");
+          const canal = new WebSocket(URL_BACKEND);
+          const reducir = crearReductor(contexto.sampleRate);
+          let pidioParar = false;
+
+          nodo.port.onmessage = ({ data }) => {
+            nivel.current.value = Math.sqrt(data.reduce((total, m) => total + m * m, 0) / data.length);
+            if (canal.readyState === WebSocket.OPEN) canal.send(reducir(data).buffer);
+          };
+          canal.onmessage = ({ data }) => {
+            const datos = JSON.parse(data);
+            setFijo((texto) => texto + datos.fijo);
+            setParcial(datos.parcial);
+          };
+          canal.onopen = () => {
+            detener.current = () => {
+              pidioParar = true;
+              apagarMicrofono();
+              setFase("terminando");  // hasta que llegue el último texto
+              setEstado("Terminando...");
+              canal.send("fin");
+            };
+            setFase("escuchando");
+            setEstado("Escuchando. La barra debe moverse cuando hablas.");
+          };
+          canal.onclose = () => {
+            if (!pidioParar) apagarMicrofono();
+            setEstado(pidioParar ? "" : "Sin conexión con el backend.");
+            setFase("parada");
+          };
+        } catch (error) {
+          apagarMicrofono();
+          setEstado(`Error: ${error.message}`);
+          setFase("parada");
+        }
+      }
+
+      const escuchando = fase === "escuchando";
+
+      return html`
+        <h1>Transcripción</h1>
+        <button
+          id="btn-microfono"
+          disabled=${fase === "arrancando" || fase === "terminando"}
+          onClick=${() => (escuchando ? detener.current() : empezar())}
+        >
+          ${escuchando ? "Parar" : "Empezar"}
+        </button>
+        <meter id="nivel" ref=${nivel} max="0.2" value="0"></meter>
+        <p id="estado">${estado}</p>
+        <pre><span id="fijo">${fijo}</span><span id="parcial">${parcial}</span></pre>
+      `;
+    }
+
+    createRoot(document.getElementById("app")).render(html`<${App} />`);
+  </script>
+</body>
+</html>
