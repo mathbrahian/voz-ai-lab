@@ -1,3 +1,6 @@
+include:
+  - llm/compose.yaml  # el servicio ollama
+
 services:
   voz:
     build: .
@@ -27,6 +30,16 @@ services:
       - "8766:8766"
     volumes:
       - ./modelos:/app/modelos
+
+  orquestador:
+    build: orquestador
+    environment:
+      # Si Voz corre en otro computador, pon su dirección en un archivo .env (no se sube a git)
+      URL_VOZ: ${URL_VOZ:-ws://voz:8766/transcribir}
+      URL_OLLAMA: http://ollama:11434
+      MODELO_LLM: qwen2.5:3b
+    ports:
+      - "127.0.0.1:8768:8768"
 
   web:
     image: nginx:alpine

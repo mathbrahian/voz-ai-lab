@@ -1,0 +1,11 @@
+services:
+  ollama:
+    image: ollama/ollama
+    user: "1000:1000"  # debe coincidir con tu usuario, para que los modelos queden a tu nombre
+    environment:
+      OLLAMA_MODELS: /modelos
+      HOME: /tmp  # Ollama guarda aquí su clave; sin esto intenta escribir en /
+    ports:
+      - "127.0.0.1:11434:11434"
+    volumes:
+      - ./modelos:/modelos

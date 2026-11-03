@@ -4,6 +4,46 @@ Escribe lo que dices mientras hablas, con `faster-whisper` en la CPU y sin envia
 
 El primer experimento, de HTTP, SSE y WebSocket, está en [sse-websocket/](sse-websocket/README.md).
 
+## Conversar con un LLM
+
+Haces una pregunta en voz alta y, tras una pausa de 1,5 s, un LLM local la responde. Son cuatro partes:
+
+```
+Página (micrófono)
+   │  WebSocket
+   ▼
+Orquestador (orquestador/, puerto 8768)
+   │ WebSocket       │ HTTP
+   ▼                 ▼
+  Voz (main.py)    Ollama (llm/)
+```
+
+El orquestador envía a Ollama el historial completo en cada pregunta. El historial solo vive en memoria y se borra al pulsar **Parar** o cerrar la página.
+
+Si Voz corre en otro computador, pon su dirección en un archivo `.env`, en la raíz del proyecto:
+
+```bash
+URL_VOZ=ws://192.168.1.22:8766/transcribir
+```
+
+Levanta el resto y descarga el modelo la primera vez:
+
+```bash
+mkdir -p llm/modelos
+docker compose up -d --build ollama orquestador web
+docker compose exec ollama ollama pull qwen2.5:3b
+```
+
+Si Voz corre en este mismo computador, no crees el `.env` y añade `voz` al comando. Abre <http://127.0.0.1:8767/>, pulsa **Empezar** y pregunta.
+
+Para probar solo el LLM:
+
+```bash
+curl http://127.0.0.1:11434/api/chat -d '{"model":"qwen2.5:3b","stream":false,"messages":[{"role":"user","content":"cuánto es 2 + 2"}]}'
+```
+
+El resto de este documento explica cómo correr el servicio de voz. La página ya no habla con él directamente, sino con el orquestador, así que siempre necesita ese servicio.
+
 ## Requisitos
 
 - Python 3.12 (es la versión con la que se probó)
@@ -33,7 +73,7 @@ done
 
 ## Levantar el proyecto
 
-Son dos partes independientes, cada una en su terminal: la página no sabe de FastAPI, y FastAPI solo ofrece el WebSocket `/transcribir`.
+FastAPI solo ofrece el WebSocket `/transcribir`, que usa el orquestador.
 
 **Backend**, desde la raíz del proyecto, porque el modelo se busca con una ruta relativa:
 
@@ -48,11 +88,11 @@ uvicorn main:app --port 8766
 python3 -m http.server 8767 --bind 127.0.0.1 --directory frontend
 ```
 
-Abre <http://127.0.0.1:8767/>, pulsa **Empezar** y permite el micrófono. El texto en gris es provisional y puede cambiar; el negro ya queda fijo. La barra debe moverse cuando hablas.
+Con el orquestador levantado, abre <http://127.0.0.1:8767/>, pulsa **Empezar** y permite el micrófono. El texto en gris es provisional y puede cambiar; el negro ya queda fijo. La barra debe moverse cuando hablas.
 
 Usa esa dirección tal cual: el navegador solo da acceso al micrófono sin HTTPS en `127.0.0.1` o `localhost`.
 
-La dirección del backend está en la constante `URL_BACKEND` de `frontend/index.html`. Cámbiala si lo mueves a otro puerto o a otra máquina.
+La dirección del orquestador está en la constante `URL_BACKEND` de `frontend/index.html`. Cámbiala si lo mueves a otro puerto o a otra máquina.
 
 La página carga React desde un CDN (`esm.sh`), así que necesita internet para abrirse. El audio no sale de tu equipo: la transcripción sigue siendo local.
 
@@ -76,7 +116,7 @@ No hace falta Python ni `.venv`. Crea la carpeta antes de arrancar: si no existe
 
 ```bash
 mkdir -p modelos
-docker compose up -d --build   # los dos: voz (backend) y web (frontend)
+docker compose up -d --build   # todos: voz, orquestador, ollama y web
 docker compose up -d voz       # solo uno de ellos
 docker compose logs -f         # ver qué está pasando
 docker compose down            # detenerlos (el modelo se conserva)
@@ -93,5 +133,6 @@ El modelo se elige con `MODELO_WHISPER` en `compose.yaml`, y el `user: "1000:100
 | `ModuleNotFoundError`                         | El entorno virtual no está activado                             |
 | Error al cargar el modelo al arrancar         | Falta ejecutar `sh entrypoint.sh`, o no estás en la raíz        |
 | `address already in use`                      | Ya hay algo en el puerto 8766 u 8767, quizá los contenedores    |
-| "Sin conexión con el backend"                 | El backend no está levantado o sigue cargando el modelo         |
+| "Sin conexión con el orquestador"             | El orquestador no está levantado                                |
+| "Sin conexión con el servicio de voz"         | Voz no está levantado, sigue cargando o `URL_VOZ` está mal      |
 | La barra no se mueve                          | El navegador no tiene permiso o está usando otro micrófono      |

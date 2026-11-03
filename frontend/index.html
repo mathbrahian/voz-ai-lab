@@ -17,7 +17,7 @@
     import { createRoot } from "https://esm.sh/react-dom@19.3.1/client";
     import htm from "https://esm.sh/htm@3.1.1";
 
-    const URL_BACKEND = "ws://127.0.0.1:8766/transcribir";
+    const URL_BACKEND = "ws://127.0.0.1:8768/conversar";  // el orquestador
 
     const html = htm.bind(createElement);  // JSX sin paso de compilación
 
@@ -58,6 +58,7 @@
       const [estado, setEstado] = useState("");
       const [fijo, setFijo] = useState("");
       const [parcial, setParcial] = useState("");
+      const [conversacion, setConversacion] = useState([]);  // cada elemento: { pregunta, respuesta }
       const nivel = useRef(null);  // se actualiza directo: llegan unos 100 bloques por segundo
       const detener = useRef(null);
 
@@ -65,6 +66,7 @@
         setFase("arrancando");
         setFijo("");
         setParcial("");
+        setConversacion([]);  // el historial del orquestador también empieza de cero
         setEstado("Pidiendo el micrófono...");
 
         let microfono, contexto;
@@ -87,6 +89,7 @@
           const canal = new WebSocket(URL_BACKEND);
           const reducir = crearReductor(contexto.sampleRate);
           let pidioParar = false;
+          let motivoCierre = "Sin conexión con el orquestador.";
 
           nodo.port.onmessage = ({ data }) => {
             nivel.current.value = Math.sqrt(data.reduce((total, m) => total + m * m, 0) / data.length);
@@ -94,8 +97,20 @@
           };
           canal.onmessage = ({ data }) => {
             const datos = JSON.parse(data);
-            setFijo((texto) => texto + datos.fijo);
-            setParcial(datos.parcial);
+            if (datos.tipo === "transcripcion") {
+              setFijo((texto) => texto + datos.fijo);
+              setParcial(datos.parcial);
+            } else if (datos.tipo === "pregunta") {
+              setFijo("");
+              setConversacion((lista) => [...lista, { pregunta: datos.texto, respuesta: "" }]);
+            } else if (datos.tipo === "respuesta") {
+              setConversacion((lista) => lista.map((turno, i) => (
+                i === datos.numero ? { ...turno, respuesta: turno.respuesta + datos.texto } : turno
+              )));
+            } else if (datos.tipo === "error") {
+              motivoCierre = datos.texto;
+              setEstado(datos.texto);
+            }
           };
           canal.onopen = () => {
             detener.current = () => {
@@ -110,7 +125,7 @@
           };
           canal.onclose = () => {
             if (!pidioParar) apagarMicrofono();
-            setEstado(pidioParar ? "" : "Sin conexión con el backend.");
+            setEstado(pidioParar ? "" : motivoCierre);
             setFase("parada");
           };
         } catch (error) {
@@ -133,6 +148,14 @@
         </button>
         <meter id="nivel" ref=${nivel} max="0.2" value="0"></meter>
         <p id="estado">${estado}</p>
+        <div id="conversacion">
+          ${conversacion.map((turno, i) => html`
+            <div key=${i}>
+              <p><b>Tú:</b> ${turno.pregunta}</p>
+              <p><b>LLM:</b> ${turno.respuesta}</p>
+            </div>
+          `)}
+        </div>
         <pre><span id="fijo">${fijo}</span><span id="parcial">${parcial}</span></pre>
       `;
     }
