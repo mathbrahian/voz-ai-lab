@@ -14,7 +14,10 @@ MARGEN_PARA_FIJAR = 1.5  # un segmento se fija si termina al menos este tiempo a
 SEGUNDOS_MAXIMOS = 20.0  # con más audio que esto se fija todo, para que cada pasada no tarde más
 
 nombre_modelo = os.environ.get("MODELO_WHISPER", "base")
-modelo = WhisperModel(f"modelos/faster-whisper-{nombre_modelo}", device="cpu", compute_type="int8")
+# "auto" usa la GPU NVIDIA si el contenedor la ve y si no, la CPU. int8 funciona en ambas (y en GPU Pascal)
+dispositivo = os.environ.get("DISPOSITIVO", "auto")
+modelo = WhisperModel(f"modelos/faster-whisper-{nombre_modelo}", device=dispositivo, compute_type="int8")
+print(f"Modelo {nombre_modelo} cargado en {modelo.model.device}")
 
 
 # --- Transcripción: Whisper no es continuo, así que se repasa el audio reciente cada segundo ---

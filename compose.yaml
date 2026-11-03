@@ -13,8 +13,18 @@ services:
       #   large-v3              3,1 GB   (usa otros archivos)
       #   large, turbo, large-v3-turbo, distil-*   (están en otros repositorios)
       MODELO_WHISPER: medium
+      DISPOSITIVO: auto  # auto, cuda o cpu
+    # Da acceso a la GPU NVIDIA (necesita el driver y nvidia-container-toolkit en el host).
+    # Sin GPU, comenta este bloque y usará la CPU.
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
     ports:
-      - "127.0.0.1:8766:8766"
+      - "8766:8766"
     volumes:
       - ./modelos:/app/modelos
 

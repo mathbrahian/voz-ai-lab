@@ -2,3 +2,6 @@ fastapi
 uvicorn[standard]
 faster-whisper
 numpy
+# Para la GPU: CUDA 12 (CUDA 13 ya no soporta tarjetas Pascal como la GTX 10xx)
+nvidia-cublas-cu12
+nvidia-cudnn-cu12==9.*

@@ -7,6 +7,9 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
+# Librerías de CUDA 12 que necesita ctranslate2 para usar la GPU (el driver lo pone el host)
+ENV LD_LIBRARY_PATH=/usr/local/lib/python3.12/site-packages/nvidia/cublas/lib:/usr/local/lib/python3.12/site-packages/nvidia/cudnn/lib
+
 COPY main.py entrypoint.sh ./
 
 ENTRYPOINT ["sh", "entrypoint.sh"]
